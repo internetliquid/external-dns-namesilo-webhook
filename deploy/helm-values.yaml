@@ -1,0 +1,62 @@
+# Helm values for running the Namesilo webhook as a sidecar of the official
+# kubernetes-sigs ExternalDNS chart.
+#
+#   helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/
+#   kubectl apply -f deploy/secret.yaml
+#   helm upgrade --install external-dns external-dns/external-dns \
+#     -n external-dns --create-namespace -f deploy/helm-values.yaml
+#
+# ExternalDNS reads the managed zones from the webhook's negotiation response,
+# so DOMAIN_FILTER below is the source of truth for which zones are managed.
+
+# Use TXT records for the ownership registry. Pick a stable, unique owner id.
+registry: txt
+txtOwnerId: external-dns-namesilo
+policy: upsert-only # change to "sync" to allow deletions
+
+sources:
+  - service
+  - ingress
+
+provider:
+  name: webhook
+  webhook:
+    image:
+      repository: ghcr.io/internetliquid/external-dns-namesilo-webhook
+      # Pin to a released tag; :latest is published only for the default branch.
+      tag: v0.1.0
+      pullPolicy: IfNotPresent
+    env:
+      - name: NAMESILO_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: namesilo-credentials
+            key: api-key
+      - name: DOMAIN_FILTER
+        value: "example.com,example.org"
+      - name: LOG_LEVEL
+        value: info
+      - name: LOG_FORMAT
+        value: json
+      # Namesilo recommends ~1 request/second per IP; tune if needed.
+      - name: NAMESILO_RATE_LIMIT
+        value: "1"
+      - name: RECORD_CACHE_TTL
+        value: 60s
+      # Uncomment to log intended changes without calling the Namesilo API:
+      # - name: DRY_RUN
+      #   value: "true"
+    securityContext:
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+    # The chart's default probes already target /healthz on the http-webhook
+    # port (8080), which this webhook serves.
