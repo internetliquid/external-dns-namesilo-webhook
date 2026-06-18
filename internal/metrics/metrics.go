@@ -6,6 +6,7 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"sync/atomic"
@@ -80,7 +81,7 @@ func (s *Server) Serve(addr string) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	s.logger.Info("metrics/health server listening", "addr", addr)
-	if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := s.httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
