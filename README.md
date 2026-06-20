@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/internetliquid/external-dns-namesilo-webhook/actions/workflows/ci.yml/badge.svg)](https://github.com/internetliquid/external-dns-namesilo-webhook/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/internetliquid/external-dns-namesilo-webhook)](https://goreportcard.com/report/github.com/internetliquid/external-dns-namesilo-webhook)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 An [ExternalDNS](https://github.com/kubernetes-sigs/external-dns) **webhook
 provider** for [Namesilo](https://www.namesilo.com/) DNS. It lets ExternalDNS
@@ -41,7 +41,8 @@ requests.
 - Structured logging via `slog`; the API key is **never logged** (and is
   scrubbed from transport errors).
 - Distroless, non-root, multi-arch image (`linux/amd64` + `linux/arm64`).
-- Health/readiness probes and Prometheus metrics on a separate port.
+- Health/readiness probes and Prometheus metrics on a separate port — including
+  Namesilo API call counts/latency, rate-limiter wait time, and cache hit ratio.
 
 ## Quick start
 
@@ -79,6 +80,7 @@ All configuration is via environment variables.
 | `DOMAIN_FILTER` | — | **Required.** Comma-separated zones this webhook manages. |
 | `DRY_RUN` | `false` | Log intended changes without calling the Namesilo API. |
 | `DEFAULT_TTL` | `3600` | TTL (seconds) applied to records whose TTL ExternalDNS leaves unset. |
+| `NAMESILO_MIN_TTL` | `3600` | Floor applied to every record TTL before writing. Namesilo enforces a 3600s minimum; lower TTLs are clamped up so writes aren't rejected and the plan doesn't churn. Set `0` to disable. |
 | `NAMESILO_RATE_LIMIT` | `1` | Maximum Namesilo requests per second. |
 | `RECORD_CACHE_TTL` | `60s` | How long `dnsListRecords` results are cached per zone (`0` disables). |
 | `NAMESILO_TIMEOUT` | `30s` | Per-request timeout for Namesilo API calls. |
@@ -92,6 +94,19 @@ All configuration is via environment variables.
 The health/metrics server exposes `GET /healthz` (liveness), `GET /readyz`
 (readiness), and `GET /metrics` (Prometheus).
 
+### Metrics
+
+Alongside the standard Go runtime and process collectors, `/metrics` exposes
+webhook-specific series for operating against a rate-limited registrar:
+
+| Metric | Type | Labels | Meaning |
+| --- | --- | --- | --- |
+| `namesilo_webhook_api_requests_total` | counter | `operation`, `result` | Namesilo API calls by operation and `success`/`error`. |
+| `namesilo_webhook_api_request_duration_seconds` | histogram | `operation` | API call latency. |
+| `namesilo_webhook_ratelimit_wait_seconds` | histogram | — | Time spent blocked on the rate limiter before a call. |
+| `namesilo_webhook_cache_hits_total` | counter | — | `dnsListRecords` cache hits. |
+| `namesilo_webhook_cache_misses_total` | counter | — | `dnsListRecords` cache misses (lists that reached the API). |
+
 ## Supported record types
 
 `A`, `AAAA`, `CNAME`, `MX`, and `TXT`. `TXT` is required because ExternalDNS
@@ -101,6 +116,9 @@ uses TXT records for its ownership registry. MX targets use ExternalDNS's
 ## Known limitations
 
 - **No bulk apply.** Every record change is an individual Namesilo API call.
+- **Minimum TTL.** Namesilo enforces a 3600-second minimum TTL. TTLs below that
+  (e.g. a `300` from an ingress annotation) are clamped up to `NAMESILO_MIN_TTL`
+  before writing, so a sub-minimum TTL is silently raised rather than honoured.
 - **Rate limiting.** Namesilo recommends ~1 request/second per IP. Large
   changesets are therefore applied gradually; a single reconcile that exceeds
   ExternalDNS's client deadline simply completes over subsequent reconciles
@@ -116,11 +134,11 @@ versions that support the webhook provider (v0.14+). Go 1.26+.
 
 ## Status
 
-This is an early release. A couple of details of Namesilo's JSON response shapes
-are implemented against documented assumptions and marked in the code with
-`// TODO: verify against live API` (the `dnsListRecords` `host` field and
-TXT-value quoting). If you spot a mismatch against a live account, please open an
-issue.
+This is an early release. One detail of Namesilo's JSON response shapes is
+implemented against a documented assumption and marked in the code with
+`// TODO: verify against live API`: whether TXT values are returned/accepted with
+enclosing quotes (the client strips them defensively on read). If you spot a
+mismatch against a live account, please open an issue.
 
 ## Development
 
@@ -142,4 +160,4 @@ description.
 
 ## License
 
-[MIT](LICENSE).
+[Apache 2.0](LICENSE).

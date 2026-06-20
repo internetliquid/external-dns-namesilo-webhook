@@ -29,18 +29,18 @@ const (
 
 // Record is a typed DNS resource record as returned by dnsListRecords.
 type Record struct {
-	// ID is the Namesilo record_id. It is required to update or delete a
-	// record, so the provider threads it through endpoint.ProviderSpecific.
+	// ID is the Namesilo record_id, required to update or delete a record. The
+	// provider deliberately does not persist it in endpoint.ProviderSpecific;
+	// it re-resolves the id at apply time by listing the zone (Namesilo rotates
+	// the record_id on every successful update, so a cached id would go stale).
 	ID string
 	// Type is the record type (A, AAAA, CNAME, MX, TXT, ...).
 	Type string
-	// Host is the hostname exactly as Namesilo returns it. Namesilo returns
-	// the full name here (e.g. "www.example.com", or "example.com" for the
-	// zone apex), not a relative label.
-	//
-	// TODO: verify against live API — confirm dnsListRecords returns the FQDN
-	// in "host" rather than a relative label. The mapping in internal/provider
-	// depends on this.
+	// Host is the hostname exactly as Namesilo returns it: the full name
+	// (e.g. "www.example.com", or "example.com" for the zone apex), not a
+	// relative label. Confirmed against Namesilo's dnsListRecords reference,
+	// whose sample data returns FQDNs in "host". The mapping in
+	// internal/provider relativizes this against the managed zone.
 	Host string
 	// Value is the record value (rrvalue).
 	Value string
@@ -58,11 +58,9 @@ type RecordInput struct {
 	// send rrdistance.
 	Type string
 	// Host is the RELATIVE host label: "" for the zone apex, "www" for
-	// "www.example.com". The provider is responsible for relativizing the
-	// ExternalDNS FQDN against the managed zone before calling.
-	//
-	// TODO: verify against live API — confirm dnsAddRecord/dnsUpdateRecord
-	// expect a relative rrhost (not the FQDN).
+	// "www.example.com". The provider relativizes the ExternalDNS FQDN against
+	// the managed zone before calling. Namesilo's dnsAddRecord/dnsUpdateRecord
+	// reference documents rrhost as relative ("no need to include the .DOMAIN").
 	Host string
 	// Value is the record value (rrvalue).
 	Value string
