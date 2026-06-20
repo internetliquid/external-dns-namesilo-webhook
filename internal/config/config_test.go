@@ -42,6 +42,7 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, time.Minute, cfg.CacheTTL)
 	assert.Equal(t, 30*time.Second, cfg.Timeout)
 	assert.Equal(t, 3600, cfg.DefaultTTL)
+	assert.Equal(t, 3600, cfg.MinTTL)
 	assert.Equal(t, slog.LevelInfo, cfg.LogLevel)
 	assert.Equal(t, "json", cfg.LogFormat)
 }
@@ -56,6 +57,7 @@ func TestLoad_CustomValues(t *testing.T) {
 	t.Setenv("RECORD_CACHE_TTL", "120s")
 	t.Setenv("NAMESILO_TIMEOUT", "10s")
 	t.Setenv("DEFAULT_TTL", "7200")
+	t.Setenv("NAMESILO_MIN_TTL", "1800")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("LOG_FORMAT", "text")
 
@@ -70,6 +72,7 @@ func TestLoad_CustomValues(t *testing.T) {
 	assert.Equal(t, 120*time.Second, cfg.CacheTTL)
 	assert.Equal(t, 10*time.Second, cfg.Timeout)
 	assert.Equal(t, 7200, cfg.DefaultTTL)
+	assert.Equal(t, 1800, cfg.MinTTL)
 	assert.Equal(t, slog.LevelDebug, cfg.LogLevel)
 	assert.Equal(t, "text", cfg.LogFormat)
 }
@@ -79,6 +82,7 @@ func TestLoad_InvalidValues(t *testing.T) {
 		"WEBHOOK_PORT":        "notaport",
 		"DRY_RUN":             "maybe",
 		"NAMESILO_RATE_LIMIT": "-1",
+		"NAMESILO_MIN_TTL":    "-5",
 		"RECORD_CACHE_TTL":    "5flarbs",
 		"LOG_LEVEL":           "verbose",
 		"LOG_FORMAT":          "xml",

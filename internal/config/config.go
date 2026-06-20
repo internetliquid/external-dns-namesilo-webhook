@@ -45,6 +45,11 @@ type Config struct {
 	// DefaultTTL is applied to records whose TTL ExternalDNS leaves unset
 	// (DEFAULT_TTL, seconds). Defaults to 3600.
 	DefaultTTL int
+	// MinTTL is the floor applied to every record TTL before it is written to
+	// Namesilo (NAMESILO_MIN_TTL, seconds). Namesilo enforces a 3600s minimum;
+	// clamping here keeps writes from being rejected and stops a sub-floor
+	// desired TTL from churning forever against the stored value. 0 disables.
+	MinTTL int
 
 	// LogLevel/LogFormat control structured logging (LOG_LEVEL, LOG_FORMAT).
 	LogLevel  slog.Level
@@ -95,6 +100,12 @@ func Load() (*Config, error) {
 	}
 	if cfg.DefaultTTL, err = getInt("DEFAULT_TTL", 3600); err != nil {
 		return nil, err
+	}
+	if cfg.MinTTL, err = getInt("NAMESILO_MIN_TTL", 3600); err != nil {
+		return nil, err
+	}
+	if cfg.MinTTL < 0 {
+		return nil, fmt.Errorf("NAMESILO_MIN_TTL must not be negative, got %d", cfg.MinTTL)
 	}
 	if cfg.LogLevel, err = parseLevel(getEnv("LOG_LEVEL", "info")); err != nil {
 		return nil, err
