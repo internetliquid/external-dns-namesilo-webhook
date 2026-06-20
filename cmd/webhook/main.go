@@ -62,26 +62,30 @@ func run() error {
 		"rateLimit", cfg.RateLimit,
 	)
 
+	// Health/metrics server (0.0.0.0). Built before the client so the Namesilo
+	// telemetry can register on the same Prometheus registry it exposes.
+	metricsAddr := net.JoinHostPort(cfg.MetricsHost, strconv.Itoa(cfg.MetricsPort))
+	metricsSrv := metrics.New(logger, metricsAddr)
+
 	client := namesilo.New(namesilo.Options{
 		APIKey:    cfg.APIKey,
 		RateLimit: cfg.RateLimit,
 		CacheTTL:  cfg.CacheTTL,
 		Timeout:   cfg.Timeout,
 		Logger:    logger,
+		Metrics:   metrics.NewClientMetrics(metricsSrv.Registry()),
 	})
 	p := nsprovider.New(nsprovider.Options{
 		Client:       client,
 		DomainFilter: cfg.DomainFilter,
 		DefaultTTL:   cfg.DefaultTTL,
+		MinTTL:       cfg.MinTTL,
 		DryRun:       cfg.DryRun,
 		Logger:       logger,
 	})
 
-	// Health/metrics server (0.0.0.0).
-	metricsSrv := metrics.New(logger)
-	metricsAddr := net.JoinHostPort(cfg.MetricsHost, strconv.Itoa(cfg.MetricsPort))
 	metricsErr := make(chan error, 1)
-	go func() { metricsErr <- metricsSrv.Serve(metricsAddr) }()
+	go func() { metricsErr <- metricsSrv.Serve() }()
 
 	// ExternalDNS provider API server (localhost). StartHTTPApi blocks and
 	// owns its own *http.Server, so it runs in a goroutine and exits with the

@@ -1,18 +1,21 @@
 package metrics
 
 import (
+	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func testServer() *Server {
-	return New(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(slog.New(slog.NewTextHandler(io.Discard, nil)), "")
 }
 
 func TestProbes_ReflectState(t *testing.T) {
@@ -43,6 +46,45 @@ func TestProbes_ReflectState(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	_ = resp.Body.Close()
+}
+
+func TestServeAndShutdown(t *testing.T) {
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), "127.0.0.1:0")
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Serve() }()
+
+	// Shutdown from this goroutine while Serve runs in another: the httpSrv is
+	// built in New (before the goroutine), so neither access races. A clean
+	// shutdown makes Serve return nil.
+	require.NoError(t, s.Shutdown(context.Background()))
+	require.NoError(t, <-errCh)
+}
+
+func TestClientMetrics_RegistersAndExposes(t *testing.T) {
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), "")
+	cm := NewClientMetrics(s.Registry())
+	cm.ObserveAPICall("dnsListRecords", 5*time.Millisecond, nil)
+	cm.ObserveAPICall("dnsAddRecord", 2*time.Millisecond, errors.New("boom"))
+	cm.ObserveRateLimitWait(time.Millisecond)
+	cm.CacheHit()
+	cm.CacheMiss()
+
+	srv := httptest.NewServer(s.handler())
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "/metrics")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	out := string(body)
+
+	assert.Contains(t, out, `namesilo_webhook_api_requests_total{operation="dnsListRecords",result="success"} 1`)
+	assert.Contains(t, out, `namesilo_webhook_api_requests_total{operation="dnsAddRecord",result="error"} 1`)
+	assert.Contains(t, out, "namesilo_webhook_api_request_duration_seconds")
+	assert.Contains(t, out, "namesilo_webhook_ratelimit_wait_seconds")
+	assert.Contains(t, out, "namesilo_webhook_cache_hits_total 1")
+	assert.Contains(t, out, "namesilo_webhook_cache_misses_total 1")
 }
 
 func TestMetricsEndpoint(t *testing.T) {

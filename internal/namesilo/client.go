@@ -40,6 +40,8 @@ type Options struct {
 	Timeout time.Duration
 	// Logger receives debug logs. Defaults to slog.Default().
 	Logger *slog.Logger
+	// Metrics receives client telemetry. Defaults to a no-op recorder.
+	Metrics Recorder
 
 	// clock is a testing seam for cache expiry. Defaults to time.Now.
 	clock func() time.Time
@@ -54,6 +56,7 @@ type Client struct {
 	cache      *zoneCache
 	timeout    time.Duration
 	logger     *slog.Logger
+	metrics    Recorder
 }
 
 // New builds a Client from Options, applying defaults for any zero values.
@@ -76,6 +79,9 @@ func New(opts Options) *Client {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
+	if opts.Metrics == nil {
+		opts.Metrics = nopRecorder{}
+	}
 	if opts.clock == nil {
 		opts.clock = time.Now
 	}
@@ -88,6 +94,7 @@ func New(opts Options) *Client {
 		cache:      newZoneCache(opts.CacheTTL, opts.clock),
 		timeout:    opts.Timeout,
 		logger:     opts.Logger,
+		metrics:    opts.Metrics,
 	}
 }
 
@@ -95,9 +102,11 @@ func New(opts Options) *Client {
 // fresh one is available.
 func (c *Client) ListRecords(ctx context.Context, domain string) ([]Record, error) {
 	if cached, ok := c.cache.get(domain); ok {
+		c.metrics.CacheHit()
 		c.logger.Debug("namesilo record cache hit", "domain", domain, "records", len(cached))
 		return cached, nil
 	}
+	c.metrics.CacheMiss()
 
 	params := url.Values{}
 	params.Set("domain", domain)
@@ -180,11 +189,17 @@ func (c *Client) DeleteRecord(ctx context.Context, domain, recordID string) erro
 // appends the required version/type/key parameters, issues the GET with a
 // bounded timeout, and decodes the envelope, returning an *APIError when the
 // reply code is not the success code.
-func (c *Client) do(ctx context.Context, operation string, params url.Values) (*apiReply, error) {
+func (c *Client) do(ctx context.Context, operation string, params url.Values) (reply *apiReply, err error) {
 	// Proactively throttle to respect Namesilo's ~1 req/s per-IP guidance.
-	if err := c.limiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("namesilo %s: rate limiter: %w", operation, err)
+	waitStart := time.Now()
+	if werr := c.limiter.Wait(ctx); werr != nil {
+		return nil, fmt.Errorf("namesilo %s: rate limiter: %w", operation, werr)
 	}
+	c.metrics.ObserveRateLimitWait(time.Since(waitStart))
+
+	// Record every API call once, on whatever path it returns by.
+	callStart := time.Now()
+	defer func() { c.metrics.ObserveAPICall(operation, time.Since(callStart), err) }()
 
 	if params == nil {
 		params = url.Values{}
