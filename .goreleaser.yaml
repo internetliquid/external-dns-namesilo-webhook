@@ -45,7 +45,7 @@ kos:
     labels:
       org.opencontainers.image.source: "https://github.com/internetliquid/external-dns-namesilo-webhook"
       org.opencontainers.image.description: "ExternalDNS webhook provider for Namesilo DNS"
-      org.opencontainers.image.licenses: "MIT"
+      org.opencontainers.image.licenses: "Apache-2.0"
 
 archives:
   - id: archive
