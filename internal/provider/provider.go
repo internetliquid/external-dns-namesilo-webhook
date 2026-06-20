@@ -43,6 +43,7 @@ type NamesiloProvider struct {
 	domainFilter *endpoint.DomainFilter
 	zones        []string // managed zones, from the required DOMAIN_FILTER
 	defaultTTL   int
+	minTTL       int // floor applied to every TTL before writing; 0 disables
 	dryRun       bool
 	logger       *slog.Logger
 }
@@ -52,6 +53,7 @@ type Options struct {
 	Client       apiClient
 	DomainFilter []string
 	DefaultTTL   int
+	MinTTL       int
 	DryRun       bool
 	Logger       *slog.Logger
 }
@@ -67,6 +69,7 @@ func New(opts Options) *NamesiloProvider {
 		domainFilter: endpoint.NewDomainFilter(opts.DomainFilter),
 		zones:        normalizeZones(opts.DomainFilter),
 		defaultTTL:   opts.DefaultTTL,
+		minTTL:       opts.MinTTL,
 		dryRun:       opts.DryRun,
 		logger:       logger,
 	}
@@ -80,11 +83,17 @@ func (p *NamesiloProvider) GetDomainFilter() endpoint.DomainFilterInterface {
 
 // AdjustEndpoints canonicalizes desired endpoints so the change plan matches
 // what Records would return. It fills in the default TTL when ExternalDNS left
-// it unset, which prevents a perpetual diff against records we created with it.
+// it unset and clamps every TTL up to the Namesilo floor. Doing the clamp here
+// (not only on the write path) is what keeps the plan convergent: Namesilo will
+// store at least minTTL, so the desired state has to say minTTL too or every
+// reconcile would re-diff a sub-floor TTL against the stored one forever.
 func (p *NamesiloProvider) AdjustEndpoints(endpoints []*endpoint.Endpoint) ([]*endpoint.Endpoint, error) {
 	for _, ep := range endpoints {
 		if ep.RecordTTL == 0 {
 			ep.RecordTTL = endpoint.TTL(p.defaultTTL)
+		}
+		if p.minTTL > 0 && ep.RecordTTL < endpoint.TTL(p.minTTL) {
+			ep.RecordTTL = endpoint.TTL(p.minTTL)
 		}
 	}
 	return endpoints, nil
@@ -273,10 +282,14 @@ func (p *NamesiloProvider) applyDelete(ctx context.Context, state *applyState, e
 }
 
 func (p *NamesiloProvider) ttlOrDefault(ttl endpoint.TTL) int {
-	if ttl > 0 {
-		return int(ttl)
+	v := int(ttl)
+	if v <= 0 {
+		v = p.defaultTTL
 	}
-	return p.defaultTTL
+	if p.minTTL > 0 && v < p.minTTL {
+		v = p.minTTL
+	}
+	return v
 }
 
 // --- mapping helpers ---

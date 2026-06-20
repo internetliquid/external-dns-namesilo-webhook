@@ -126,6 +126,46 @@ func TestAdjustEndpoints_SetsDefaultTTL(t *testing.T) {
 	assert.Equal(t, endpoint.TTL(120), out[1].RecordTTL)
 }
 
+func minTTLProvider(client apiClient, zones []string, minTTL int) *NamesiloProvider {
+	return New(Options{
+		Client:       client,
+		DomainFilter: zones,
+		DefaultTTL:   3600,
+		MinTTL:       minTTL,
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+}
+
+func TestAdjustEndpoints_ClampsToMinTTL(t *testing.T) {
+	p := minTTLProvider(&mockClient{}, []string{"example.com"}, 3600)
+	in := []*endpoint.Endpoint{
+		{DNSName: "low.example.com", RecordType: "A", Targets: endpoint.Targets{"192.0.2.1"}, RecordTTL: 300},
+		{DNSName: "unset.example.com", RecordType: "A", Targets: endpoint.Targets{"192.0.2.2"}, RecordTTL: 0},
+		{DNSName: "high.example.com", RecordType: "A", Targets: endpoint.Targets{"192.0.2.3"}, RecordTTL: 7200},
+	}
+	out, err := p.AdjustEndpoints(in)
+	require.NoError(t, err)
+	assert.Equal(t, endpoint.TTL(3600), out[0].RecordTTL, "sub-floor TTL clamps up to the Namesilo minimum")
+	assert.Equal(t, endpoint.TTL(3600), out[1].RecordTTL, "unset TTL becomes the default (== floor here)")
+	assert.Equal(t, endpoint.TTL(7200), out[2].RecordTTL, "above-floor TTL is left untouched")
+}
+
+func TestApplyCreate_ClampsTTLToMin(t *testing.T) {
+	m := &mockClient{}
+	p := minTTLProvider(m, []string{"example.com"}, 3600)
+
+	// A create whose TTL slipped through below the floor is still clamped on the
+	// write path, so we never send Namesilo a TTL it would reject.
+	err := p.ApplyChanges(context.Background(), &plan.Changes{
+		Create: []*endpoint.Endpoint{{DNSName: "a.example.com", RecordType: "A", Targets: endpoint.Targets{"192.0.2.1"}, RecordTTL: 300}},
+	})
+	require.NoError(t, err)
+
+	adds := m.opsOf("add")
+	require.Len(t, adds, 1)
+	assert.Equal(t, 3600, adds[0].in.TTL)
+}
+
 func TestGetDomainFilter(t *testing.T) {
 	p := testProvider(&mockClient{}, []string{"example.com"}, false)
 	assert.True(t, p.GetDomainFilter().Match("example.com"))
