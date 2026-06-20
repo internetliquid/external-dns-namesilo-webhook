@@ -28,9 +28,11 @@ type Server struct {
 	ready   atomic.Bool
 }
 
-// New creates a metrics Server with the Go runtime and process collectors
-// registered. It does not start listening; call Serve.
-func New(logger *slog.Logger) *Server {
+// New creates a metrics Server bound to addr with the Go runtime and process
+// collectors registered. The underlying *http.Server is built here (before any
+// goroutine), so Serve and Shutdown can be called from different goroutines
+// without racing on it. It does not start listening; call Serve.
+func New(logger *slog.Logger, addr string) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -39,7 +41,13 @@ func New(logger *slog.Logger) *Server {
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
-	return &Server{logger: logger, registry: reg}
+	s := &Server{logger: logger, registry: reg}
+	s.httpSrv = &http.Server{
+		Addr:              addr,
+		Handler:           s.handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return s
 }
 
 // Registry exposes the Prometheus registry so callers can register additional
@@ -72,15 +80,10 @@ func probeHandler(flag *atomic.Bool) http.HandlerFunc {
 	}
 }
 
-// Serve listens on addr and blocks until the server is shut down. A clean
-// shutdown (via Shutdown) returns nil.
-func (s *Server) Serve(addr string) error {
-	s.httpSrv = &http.Server{
-		Addr:              addr,
-		Handler:           s.handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	s.logger.Info("metrics/health server listening", "addr", addr)
+// Serve listens on the configured address and blocks until the server is shut
+// down. A clean shutdown (via Shutdown) returns nil.
+func (s *Server) Serve() error {
+	s.logger.Info("metrics/health server listening", "addr", s.httpSrv.Addr)
 	if err := s.httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

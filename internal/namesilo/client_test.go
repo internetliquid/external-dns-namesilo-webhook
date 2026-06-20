@@ -182,8 +182,10 @@ func TestUpdateAndDeleteRecord_SendRecordID(t *testing.T) {
 }
 
 func TestAPIError_OnNonSuccessCode(t *testing.T) {
+	// 110 is Namesilo's "invalid API key" code (300 is success). Any non-300
+	// reply.code surfaces as an *APIError.
 	c, _ := newTestClient(t, Options{APIKey: "k"}, func(w http.ResponseWriter, _ *http.Request) {
-		writeReply(t, w, map[string]any{"code": 280, "detail": "invalid api key"})
+		writeReply(t, w, map[string]any{"code": 110, "detail": "invalid API key"})
 	})
 
 	_, err := c.ListRecords(context.Background(), "example.com")
@@ -191,8 +193,8 @@ func TestAPIError_OnNonSuccessCode(t *testing.T) {
 
 	var apiErr *APIError
 	require.ErrorAs(t, err, &apiErr)
-	assert.Equal(t, 280, apiErr.Code)
-	assert.Equal(t, "invalid api key", apiErr.Detail)
+	assert.Equal(t, 110, apiErr.Code)
+	assert.Equal(t, "invalid API key", apiErr.Detail)
 	assert.Equal(t, "dnsListRecords", apiErr.Op)
 }
 
@@ -240,8 +242,37 @@ func TestRequestError_RedactsAPIKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "REDACTED")
 }
 
+type fakeRecorder struct {
+	apiCalls, rlWaits, hits, misses int
+}
+
+func (f *fakeRecorder) ObserveAPICall(string, time.Duration, error) { f.apiCalls++ }
+func (f *fakeRecorder) ObserveRateLimitWait(time.Duration)          { f.rlWaits++ }
+func (f *fakeRecorder) CacheHit()                                   { f.hits++ }
+func (f *fakeRecorder) CacheMiss()                                  { f.misses++ }
+
+func TestMetricsRecorder_RecordsCallsHitsAndWaits(t *testing.T) {
+	rec := &fakeRecorder{}
+	now := time.Unix(1_000_000, 0)
+	c, _ := newTestClient(t, Options{APIKey: "k", CacheTTL: time.Minute, clock: func() time.Time { return now }, Metrics: rec}, func(w http.ResponseWriter, _ *http.Request) {
+		writeReply(t, w, map[string]any{"code": 300, "resource_record": []map[string]any{}})
+	})
+
+	// First list misses the cache and reaches the API; the second is served
+	// from cache with no API call.
+	_, err := c.ListRecords(context.Background(), "example.com")
+	require.NoError(t, err)
+	_, err = c.ListRecords(context.Background(), "example.com")
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, rec.misses)
+	assert.Equal(t, 1, rec.hits)
+	assert.Equal(t, 1, rec.apiCalls, "only the cache-missing list reaches the API")
+	assert.Equal(t, 1, rec.rlWaits)
+}
+
 func TestScrubKey(t *testing.T) {
-	out := scrubKey("https://www.namesilo.com/api/listDomains?version=1&type=json&key=abc123&domain=example.com")
+	out := scrubKey("https://www.namesilo.com/api/dnsListRecords?version=1&type=json&key=abc123&domain=example.com")
 	assert.NotContains(t, out, "abc123")
 	assert.Contains(t, out, "key=REDACTED")
 	assert.Contains(t, out, "domain=example.com")
