@@ -23,16 +23,10 @@ type call struct {
 }
 
 type mockClient struct {
-	domains []string
 	records map[string][]namesilo.Record
 	listErr error
 	nextID  int
 	calls   []call
-}
-
-func (m *mockClient) ListDomains(_ context.Context) ([]string, error) {
-	m.calls = append(m.calls, call{op: "listdomains"})
-	return m.domains, nil
 }
 
 func (m *mockClient) ListRecords(_ context.Context, zone string) ([]namesilo.Record, error) {
@@ -279,19 +273,4 @@ func TestResolveZoneAndRelativeHost(t *testing.T) {
 
 	_, ok = resolveZone("nope.org", zones)
 	assert.False(t, ok)
-}
-
-func TestManagedZones_DiscoversWhenNoFilter(t *testing.T) {
-	m := &mockClient{
-		domains: []string{"discovered.com"},
-		records: map[string][]namesilo.Record{
-			"discovered.com": {{ID: "1", Type: "A", Host: "discovered.com", Value: "192.0.2.1", TTL: 3600}},
-		},
-	}
-	p := testProvider(m, nil, false) // no DOMAIN_FILTER
-
-	eps, err := p.Records(context.Background())
-	require.NoError(t, err)
-	require.Len(t, eps, 1)
-	assert.NotEmpty(t, m.opsOf("listdomains"), "empty filter triggers domain discovery")
 }

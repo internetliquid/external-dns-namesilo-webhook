@@ -16,14 +16,23 @@ func TestLoad_RequiresAPIKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "NAMESILO_API_KEY")
 }
 
+func TestLoad_RequiresDomainFilter(t *testing.T) {
+	t.Setenv("NAMESILO_API_KEY", "key")
+	// DOMAIN_FILTER unset.
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DOMAIN_FILTER")
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("NAMESILO_API_KEY", "key")
+	t.Setenv("DOMAIN_FILTER", "example.com")
 
 	cfg, err := Load()
 	require.NoError(t, err)
 
 	assert.Equal(t, "key", cfg.APIKey)
-	assert.Nil(t, cfg.DomainFilter)
+	assert.Equal(t, []string{"example.com"}, cfg.DomainFilter)
 	assert.False(t, cfg.DryRun)
 	assert.Equal(t, "localhost", cfg.WebhookHost)
 	assert.Equal(t, 8888, cfg.WebhookPort)
@@ -77,6 +86,7 @@ func TestLoad_InvalidValues(t *testing.T) {
 	for key, bad := range cases {
 		t.Run(key, func(t *testing.T) {
 			t.Setenv("NAMESILO_API_KEY", "key")
+			t.Setenv("DOMAIN_FILTER", "example.com")
 			t.Setenv(key, bad)
 			_, err := Load()
 			assert.Error(t, err, "%s=%q should fail validation", key, bad)

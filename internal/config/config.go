@@ -16,7 +16,8 @@ type Config struct {
 	// APIKey is the Namesilo API key (NAMESILO_API_KEY). Required, secret.
 	APIKey string
 	// DomainFilter is the set of zones this instance manages (DOMAIN_FILTER).
-	// Empty means "discover and manage all account domains".
+	// Required: Namesilo operations are keyed by domain name, so the managed
+	// zones are configured explicitly rather than discovered.
 	DomainFilter []string
 	// DryRun logs intended changes without calling the Namesilo API (DRY_RUN).
 	DryRun bool
@@ -65,6 +66,9 @@ func Load() (*Config, error) {
 		WebhookHost:  getEnv("WEBHOOK_HOST", "localhost"),
 		MetricsHost:  getEnv("METRICS_HOST", "0.0.0.0"),
 		LogFormat:    strings.ToLower(getEnv("LOG_FORMAT", "json")),
+	}
+	if len(cfg.DomainFilter) == 0 {
+		return nil, fmt.Errorf("DOMAIN_FILTER is required: list the Namesilo zones this webhook manages (comma-separated)")
 	}
 
 	var err error

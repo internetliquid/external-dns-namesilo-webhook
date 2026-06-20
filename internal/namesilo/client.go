@@ -91,20 +91,6 @@ func New(opts Options) *Client {
 	}
 }
 
-// ListDomains returns every domain in the account.
-//
-// TODO: verify against live API — this assumes listDomains returns all domains
-// in a single response under reply.domains.domain. If Namesilo paginates this
-// endpoint, this must loop over pages; enumerating only the first page is a
-// known failure mode of the legacy client we are deliberately not using.
-func (c *Client) ListDomains(ctx context.Context) ([]string, error) {
-	reply, err := c.do(ctx, "listDomains", nil)
-	if err != nil {
-		return nil, err
-	}
-	return reply.Domains.Domain, nil
-}
-
 // ListRecords returns all DNS records for a zone, serving a cached copy when a
 // fresh one is available.
 func (c *Client) ListRecords(ctx context.Context, domain string) ([]Record, error) {

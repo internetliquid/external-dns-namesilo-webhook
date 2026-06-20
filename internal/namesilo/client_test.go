@@ -131,19 +131,6 @@ func TestMutations_InvalidateCache(t *testing.T) {
 	assert.Equal(t, 2, listHits, "list after a mutation should bypass the invalidated cache")
 }
 
-func TestListDomains_ParsesDomainArray(t *testing.T) {
-	c, _ := newTestClient(t, Options{APIKey: "k"}, func(w http.ResponseWriter, _ *http.Request) {
-		writeReply(t, w, map[string]any{
-			"code":    300,
-			"domains": map[string]any{"domain": []string{"example.com", "example.org"}},
-		})
-	})
-
-	domains, err := c.ListDomains(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, []string{"example.com", "example.org"}, domains)
-}
-
 func TestAddRecord_SendsParamsAndReturnsID(t *testing.T) {
 	c, reqs := newTestClient(t, Options{APIKey: "secret-key"}, func(w http.ResponseWriter, _ *http.Request) {
 		writeReply(t, w, map[string]any{"code": 300, "record_id": "999"})
@@ -199,14 +186,14 @@ func TestAPIError_OnNonSuccessCode(t *testing.T) {
 		writeReply(t, w, map[string]any{"code": 280, "detail": "invalid api key"})
 	})
 
-	_, err := c.ListDomains(context.Background())
+	_, err := c.ListRecords(context.Background(), "example.com")
 	require.Error(t, err)
 
 	var apiErr *APIError
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, 280, apiErr.Code)
 	assert.Equal(t, "invalid api key", apiErr.Detail)
-	assert.Equal(t, "listDomains", apiErr.Op)
+	assert.Equal(t, "dnsListRecords", apiErr.Op)
 }
 
 func TestHTTPStatusError(t *testing.T) {
@@ -214,18 +201,18 @@ func TestHTTPStatusError(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
-	_, err := c.ListDomains(context.Background())
+	_, err := c.ListRecords(context.Background(), "example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP status 500")
 }
 
 func TestRateLimiter_ThrottlesAndRespectsContext(t *testing.T) {
 	c, _ := newTestClient(t, Options{APIKey: "k", RateLimit: 1, Burst: 1}, func(w http.ResponseWriter, _ *http.Request) {
-		writeReply(t, w, map[string]any{"code": 300, "domains": map[string]any{"domain": []string{}}})
+		writeReply(t, w, map[string]any{"code": 300, "resource_record": []map[string]any{}})
 	})
 
 	// First call consumes the only token immediately.
-	_, err := c.ListDomains(context.Background())
+	_, err := c.ListRecords(context.Background(), "example.com")
 	require.NoError(t, err)
 
 	// The second call must wait ~1s for a refill; a short deadline forces the
@@ -233,7 +220,7 @@ func TestRateLimiter_ThrottlesAndRespectsContext(t *testing.T) {
 	// error to ExternalDNS.
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err = c.ListDomains(ctx)
+	_, err = c.ListRecords(ctx, "example.com")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "rate limiter")
 }
@@ -247,7 +234,7 @@ func TestRequestError_RedactsAPIKey(t *testing.T) {
 	srv.Close()
 
 	c := New(Options{APIKey: "SUPERSECRET", BaseURL: base, RateLimit: 100000})
-	_, err := c.ListDomains(context.Background())
+	_, err := c.ListRecords(context.Background(), "example.com")
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "SUPERSECRET", "API key must never appear in errors")
 	assert.Contains(t, err.Error(), "REDACTED")

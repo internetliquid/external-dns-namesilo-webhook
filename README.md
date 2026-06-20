@@ -76,7 +76,7 @@ All configuration is via environment variables.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `NAMESILO_API_KEY` | — | **Required.** Namesilo API key. Treated as a secret. |
-| `DOMAIN_FILTER` | _(empty)_ | Comma-separated zones to manage. Empty = discover and manage all account domains. |
+| `DOMAIN_FILTER` | — | **Required.** Comma-separated zones this webhook manages. |
 | `DRY_RUN` | `false` | Log intended changes without calling the Namesilo API. |
 | `DEFAULT_TTL` | `3600` | TTL (seconds) applied to records whose TTL ExternalDNS leaves unset. |
 | `NAMESILO_RATE_LIMIT` | `1` | Maximum Namesilo requests per second. |
@@ -107,8 +107,6 @@ uses TXT records for its ownership registry. MX targets use ExternalDNS's
   (DNS reconciliation is idempotent).
 - **Propagation delay.** Namesilo may take some time to propagate changes; they
   won't be visible to `Records` until they appear in `dnsListRecords`.
-- **Account-domain discovery** (running without `DOMAIN_FILTER`) relies on
-  `listDomains`; setting `DOMAIN_FILTER` is recommended and avoids that call.
 
 ## Compatibility
 
@@ -118,11 +116,11 @@ versions that support the webhook provider (v0.14+). Go 1.26+.
 
 ## Status
 
-This is an early release. A few details of Namesilo's JSON response shapes are
-implemented against documented assumptions and marked in the code with
-`// TODO: verify against live API` (e.g. the `dnsListRecords` `host` field, the
-`listDomains` envelope, and TXT-value quoting). If you spot a mismatch against a
-live account, please open an issue.
+This is an early release. A couple of details of Namesilo's JSON response shapes
+are implemented against documented assumptions and marked in the code with
+`// TODO: verify against live API` (the `dnsListRecords` `host` field and
+TXT-value quoting). If you spot a mismatch against a live account, please open an
+issue.
 
 ## Development
 

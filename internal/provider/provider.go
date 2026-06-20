@@ -30,7 +30,6 @@ var supportedTypes = map[string]bool{
 // apiClient is the subset of *namesilo.Client the provider needs, expressed as
 // an interface so the provider can be unit-tested without a live API or HTTP.
 type apiClient interface {
-	ListDomains(ctx context.Context) ([]string, error)
 	ListRecords(ctx context.Context, domain string) ([]namesilo.Record, error)
 	AddRecord(ctx context.Context, domain string, in namesilo.RecordInput) (string, error)
 	UpdateRecord(ctx context.Context, domain, recordID string, in namesilo.RecordInput) error
@@ -42,7 +41,7 @@ type NamesiloProvider struct {
 	provider.BaseProvider
 	client       apiClient
 	domainFilter *endpoint.DomainFilter
-	zones        []string // static managed zones from DOMAIN_FILTER; nil means discover
+	zones        []string // managed zones, from the required DOMAIN_FILTER
 	defaultTTL   int
 	dryRun       bool
 	logger       *slog.Logger
@@ -73,8 +72,8 @@ func New(opts Options) *NamesiloProvider {
 	}
 }
 
-// GetDomainFilter returns the configured domain filter. An empty filter matches
-// every zone in the account.
+// GetDomainFilter returns the configured domain filter (the managed zones),
+// which ExternalDNS reads during negotiation to scope reconciliation.
 func (p *NamesiloProvider) GetDomainFilter() endpoint.DomainFilterInterface {
 	return p.domainFilter
 }
@@ -96,16 +95,8 @@ func (p *NamesiloProvider) AdjustEndpoints(endpoints []*endpoint.Endpoint) ([]*e
 // targets). A failure to list any zone fails the whole call so ExternalDNS
 // retries rather than acting on a partial view.
 func (p *NamesiloProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error) {
-	zones, err := p.managedZones(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var endpoints []*endpoint.Endpoint
-	for _, zone := range zones {
-		if !p.domainFilter.Match(zone) {
-			continue
-		}
+	for _, zone := range p.zones {
 		records, err := p.client.ListRecords(ctx, zone)
 		if err != nil {
 			return nil, fmt.Errorf("listing records for zone %s: %w", zone, err)
@@ -129,10 +120,7 @@ func (p *NamesiloProvider) ApplyChanges(ctx context.Context, changes *plan.Chang
 		return nil
 	}
 
-	zones, err := p.managedZones(ctx)
-	if err != nil {
-		return err
-	}
+	zones := p.zones
 	state := &applyState{client: p.client, indexes: map[string]recordIndex{}}
 
 	for _, ep := range changes.Create {
@@ -282,19 +270,6 @@ func (p *NamesiloProvider) applyDelete(ctx context.Context, state *applyState, e
 		}
 	}
 	return nil
-}
-
-// managedZones returns the set of zones the provider operates on: the configured
-// DOMAIN_FILTER when set, otherwise every domain in the account.
-func (p *NamesiloProvider) managedZones(ctx context.Context) ([]string, error) {
-	if len(p.zones) > 0 {
-		return p.zones, nil
-	}
-	domains, err := p.client.ListDomains(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("discovering account domains: %w", err)
-	}
-	return normalizeZones(domains), nil
 }
 
 func (p *NamesiloProvider) ttlOrDefault(ttl endpoint.TTL) int {

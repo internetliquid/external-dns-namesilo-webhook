@@ -100,19 +100,8 @@ type apiReply struct {
 	// dnsListRecords
 	ResourceRecord []apiRecord `json:"resource_record"`
 
-	// listDomains: reply.domains is an object wrapping a "domain" array of
-	// strings, not an array of objects.
-	//
-	// TODO: verify against live API — confirm the listDomains shape is
-	// {"domains": {"domain": ["a.com", "b.com"]}} and whether it paginates.
-	Domains apiDomains `json:"domains"`
-
 	// dnsAddRecord returns the new record's id here.
 	RecordID string `json:"record_id"`
-}
-
-type apiDomains struct {
-	Domain []string `json:"domain"`
 }
 
 type apiRecord struct {
