@@ -55,12 +55,14 @@ jobs:
 
   # Pre-merge review by Claude. Gated on `check` so no tokens are spent on code
   # that doesn't already build, lint, vet, and pass tests under -race. Skipped
-  # for non-PR events and for PRs whose title carries [skip-review] or [WIP].
+  # for non-PR events, for bot-authored PRs (e.g. release-please's release PRs),
+  # and for PRs whose title carries [skip-review] or [WIP].
   review:
     name: Claude code review
     needs: check
     if: >-
       github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login != 'github-actions[bot]' &&
       !contains(github.event.pull_request.title, '[skip-review]') &&
       !contains(github.event.pull_request.title, '[WIP]')
     runs-on: ubuntu-latest
