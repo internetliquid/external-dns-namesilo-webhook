@@ -59,9 +59,8 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
-sboms:
-  - id: archive
-    artifacts: archive
+# Note: the container image's SBOM is generated natively by ko (kos.sbom above);
+# no archive-level SBOMs here, which would require a syft binary on the runner.
 
 # release-please owns the changelog and release notes.
 changelog:
@@ -72,5 +71,5 @@ release:
     owner: internetliquid
     name: external-dns-namesilo-webhook
   # The GitHub Release already exists (created by release-please); append the
-  # binaries, checksums, and SBOMs to it rather than recreating it.
+  # binaries and checksums to it rather than recreating it.
   mode: append
