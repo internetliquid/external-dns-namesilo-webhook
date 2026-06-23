@@ -6,9 +6,10 @@ import (
 )
 
 // zoneCache caches dnsListRecords results per zone for a bounded TTL so that
-// repeated reconciles don't re-list the same zone (Namesilo asks that queries
-// on a given domain be throttled to roughly one per two seconds). A non-positive
-// TTL disables caching entirely.
+// repeated reconciles don't re-list the same zone. This respects Namesilo's
+// per-domain guidance (repeated queries on a single domain throttled to roughly
+// one per two seconds) — distinct from the ~1 req/s per-IP limit the client's
+// rate limiter enforces. A non-positive TTL disables caching entirely.
 type zoneCache struct {
 	ttl time.Duration
 	now func() time.Time
