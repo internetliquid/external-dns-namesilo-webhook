@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/internetliquid/external-dns-namesilo-webhook/compare/v0.1.0...v0.1.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **ci:** clear govulncheck (Go 1.26.8, x/text v0.42.0); the Claude review moves to v1 and reads the whole PR ([c8868e0](https://github.com/internetliquid/external-dns-namesilo-webhook/commit/c8868e0f67686bde390c794497646ef1fa373651))
+
 ## 0.1.0 (2026-06-23)
 
 
