@@ -3,6 +3,7 @@ package namesilo
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -242,6 +243,31 @@ func TestRequestError_RedactsAPIKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "REDACTED")
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestDefaultBaseURL_UsesBatchAPI(t *testing.T) {
+	var got *url.URL
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		got = r.URL
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"reply":{"code":300,"resource_record":[]}}`)),
+			Header:     http.Header{},
+		}, nil
+	})
+
+	c := New(Options{APIKey: "k", HTTPClient: &http.Client{Transport: transport}, RateLimit: 100000})
+	_, err := c.ListRecords(context.Background(), "example.com")
+	require.NoError(t, err)
+
+	require.NotNil(t, got)
+	assert.Equal(t, "https", got.Scheme)
+	assert.Equal(t, "www.namesilo.com", got.Host)
+	assert.Equal(t, "/apibatch/dnsListRecords", got.Path)
+}
+
 type fakeRecorder struct {
 	apiCalls, rlWaits, hits, misses int
 }
@@ -272,7 +298,7 @@ func TestMetricsRecorder_RecordsCallsHitsAndWaits(t *testing.T) {
 }
 
 func TestScrubKey(t *testing.T) {
-	out := scrubKey("https://www.namesilo.com/api/dnsListRecords?version=1&type=json&key=abc123&domain=example.com")
+	out := scrubKey("https://www.namesilo.com/apibatch/dnsListRecords?version=1&type=json&key=abc123&domain=example.com")
 	assert.NotContains(t, out, "abc123")
 	assert.Contains(t, out, "key=REDACTED")
 	assert.Contains(t, out, "domain=example.com")

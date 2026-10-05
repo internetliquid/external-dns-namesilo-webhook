@@ -83,7 +83,7 @@ func TestRecordsToEndpoints_GroupsAndMaps(t *testing.T) {
 		{ID: "5", Type: "NS", Host: "example.com", Value: "ns1.namesilo.com", TTL: 3600},
 	}
 
-	eps := recordsToEndpoints(records)
+	eps := recordsToEndpoints(records, "example.com")
 	require.Len(t, eps, 3, "two A records collapse to one endpoint; NS is unsupported and dropped")
 
 	assert.Equal(t, "www.example.com", eps[0].DNSName)
@@ -112,6 +112,57 @@ func TestRecords_AcrossZonesAndListError(t *testing.T) {
 	m.listErr = errors.New("boom")
 	_, err = p.Records(context.Background())
 	require.Error(t, err)
+}
+
+// Host forms as captured from the live API on 2026-10-05 (see absoluteName).
+func TestRecords_RelativeHostsFromLiveAPI(t *testing.T) {
+	m := &mockClient{records: map[string][]namesilo.Record{
+		"example.com": {
+			{ID: "1", Type: "CNAME", Host: "www", Value: "parking.namesilo.com", TTL: 3603},
+			{ID: "2", Type: "A", Host: "@", Value: "192.0.2.1", TTL: 3603},
+			{ID: "3", Type: "TXT", Host: "a-www", Value: "heritage=external-dns", TTL: 3600},
+		},
+	}}
+	p := testProvider(m, []string{"example.com"}, false)
+
+	eps, err := p.Records(context.Background())
+	require.NoError(t, err)
+	names := make([]string, 0, len(eps))
+	for _, ep := range eps {
+		names = append(names, ep.DNSName)
+	}
+	assert.Equal(t, []string{"www.example.com", "example.com", "a-www.example.com"}, names)
+}
+
+func TestApplyDelete_FindsRecordListedWithRelativeHost(t *testing.T) {
+	m := &mockClient{records: map[string][]namesilo.Record{
+		"example.com": {{ID: "r1", Type: "A", Host: "www", Value: "192.0.2.1", TTL: 3600}},
+	}}
+	p := testProvider(m, []string{"example.com"}, false)
+
+	err := p.ApplyChanges(context.Background(), &plan.Changes{
+		Delete: []*endpoint.Endpoint{{DNSName: "www.example.com", RecordType: "A", Targets: endpoint.Targets{"192.0.2.1"}}},
+	})
+	require.NoError(t, err)
+	deletes := m.opsOf("delete")
+	require.Len(t, deletes, 1)
+	assert.Equal(t, "r1", deletes[0].id)
+}
+
+func TestAbsoluteName(t *testing.T) {
+	cases := map[string]string{
+		"":                 "example.com",
+		"@":                "example.com",
+		"www":              "www.example.com",
+		"WWW":              "www.example.com",
+		"www.example.com":  "www.example.com",
+		"www.example.com.": "www.example.com",
+		"example.com":      "example.com",
+		"a.b":              "a.b.example.com",
+	}
+	for host, want := range cases {
+		assert.Equal(t, want, absoluteName(host, "example.com"), host)
+	}
 }
 
 func TestAdjustEndpoints_SetsDefaultTTL(t *testing.T) {

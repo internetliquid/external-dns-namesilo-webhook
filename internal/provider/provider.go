@@ -110,7 +110,7 @@ func (p *NamesiloProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, e
 		if err != nil {
 			return nil, fmt.Errorf("listing records for zone %s: %w", zone, err)
 		}
-		endpoints = append(endpoints, recordsToEndpoints(records)...)
+		endpoints = append(endpoints, recordsToEndpoints(records, zone)...)
 	}
 	return endpoints, nil
 }
@@ -296,7 +296,7 @@ func (p *NamesiloProvider) ttlOrDefault(ttl endpoint.TTL) int {
 
 // recordsToEndpoints groups Namesilo records into ExternalDNS endpoints, one per
 // name+type with all values collected as targets, preserving input order.
-func recordsToEndpoints(records []namesilo.Record) []*endpoint.Endpoint {
+func recordsToEndpoints(records []namesilo.Record, zone string) []*endpoint.Endpoint {
 	type key struct{ name, typ string }
 	grouped := make(map[key]*endpoint.Endpoint)
 	var order []key
@@ -305,7 +305,7 @@ func recordsToEndpoints(records []namesilo.Record) []*endpoint.Endpoint {
 		if !supportedTypes[r.Type] {
 			continue
 		}
-		name := normalizeName(r.Host)
+		name := absoluteName(r.Host, zone)
 		k := key{name, r.Type}
 		target := recordToTarget(r)
 
@@ -400,6 +400,21 @@ func relativeHost(dnsName, zone string) string {
 	return strings.TrimSuffix(name, "."+zone)
 }
 
+// absoluteName turns a host as Namesilo returns it into the full name within
+// zone. The live API returns hosts relative to the domain ("www", "@" for the
+// apex); its reference samples show full names. Both forms map to the same name.
+func absoluteName(host, zone string) string {
+	name := normalizeName(host)
+	switch {
+	case name == "" || name == "@":
+		return zone
+	case name == zone || strings.HasSuffix(name, "."+zone):
+		return name
+	default:
+		return name + "." + zone
+	}
+}
+
 // normalizeName lowercases a DNS name and strips any trailing dot so names from
 // ExternalDNS (no trailing dot) and Namesilo compare equal.
 func normalizeName(name string) string {
@@ -459,7 +474,7 @@ func (s *applyState) index(ctx context.Context, zone string) (recordIndex, error
 	}
 	idx := make(recordIndex, len(records))
 	for _, r := range records {
-		name := normalizeName(r.Host)
+		name := absoluteName(r.Host, zone)
 		value, dist := recordValueAndDistance(r)
 		idx[indexKey(r.Type, name, value, dist)] = r
 	}
