@@ -33,7 +33,8 @@ requests.
 
 ## Features
 
-- Talks to the Namesilo JSON API (`type=json`) end to end — no XML.
+- Talks to Namesilo's batch API (`/apibatch`, which Namesilo requires for
+  automated callers) using JSON (`type=json`) end to end — no XML.
 - **Internal rate limiter** (default ~1 req/s) honouring Namesilo's per-IP
   guidance; a hit surfaces to ExternalDNS as a retryable error.
 - **Per-zone record cache** with a configurable TTL, invalidated on writes, so

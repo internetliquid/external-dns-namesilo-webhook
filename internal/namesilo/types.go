@@ -1,5 +1,5 @@
 // Package namesilo is a small, purpose-built JSON client for Namesilo's
-// classic DNS API (https://www.namesilo.com/api-reference).
+// DNS API (https://www.namesilo.com/api-reference), via the batch endpoint.
 //
 // It deliberately does not wrap the legacy nrdcg/namesilo client (which is
 // modeled around Namesilo's 2019 XML structs); instead it talks to the JSON
@@ -16,8 +16,11 @@ import (
 )
 
 const (
-	// DefaultBaseURL is the base of Namesilo's classic API.
-	DefaultBaseURL = "https://www.namesilo.com/api"
+	// DefaultBaseURL is the base of Namesilo's batch API. Namesilo requires
+	// automated, repetitive callers like this webhook to use /apibatch instead
+	// of /api, and may suspend the account otherwise
+	// (https://www.namesilo.com/support/v2/articles/account-options/api-automated-batch).
+	DefaultBaseURL = "https://www.namesilo.com/apibatch"
 
 	// apiVersion is the value of the required version query parameter.
 	apiVersion = "1"
@@ -36,11 +39,8 @@ type Record struct {
 	ID string
 	// Type is the record type (A, AAAA, CNAME, MX, TXT, ...).
 	Type string
-	// Host is the hostname exactly as Namesilo returns it: the full name
-	// (e.g. "www.example.com", or "example.com" for the zone apex), not a
-	// relative label. Confirmed against Namesilo's dnsListRecords reference,
-	// whose sample data returns FQDNs in "host". The mapping in
-	// internal/provider relativizes this against the managed zone.
+	// Host is the hostname exactly as Namesilo returns it; see
+	// provider.absoluteName.
 	Host string
 	// Value is the record value (rrvalue).
 	Value string
