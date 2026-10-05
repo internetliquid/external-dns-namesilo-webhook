@@ -76,11 +76,11 @@ func testProvider(client apiClient, zones []string, dryRun bool) *NamesiloProvid
 
 func TestRecordsToEndpoints_GroupsAndMaps(t *testing.T) {
 	records := []namesilo.Record{
-		{ID: "1", Type: "A", Host: "www.example.com", Value: "192.0.2.1", TTL: 3600},
-		{ID: "2", Type: "A", Host: "www.example.com", Value: "192.0.2.2", TTL: 3600},
-		{ID: "3", Type: "MX", Host: "example.com", Value: "mail.example.com", TTL: 7200, Distance: 10},
-		{ID: "4", Type: "TXT", Host: "example.com", Value: `"heritage=external-dns"`, TTL: 300},
-		{ID: "5", Type: "NS", Host: "example.com", Value: "ns1.namesilo.com", TTL: 3600},
+		{ID: "1", Type: "A", Host: "www", Value: "192.0.2.1", TTL: 3600},
+		{ID: "2", Type: "A", Host: "www", Value: "192.0.2.2", TTL: 3600},
+		{ID: "3", Type: "MX", Host: "@", Value: "mail.example.com", TTL: 7200, Distance: 10},
+		{ID: "4", Type: "TXT", Host: "@", Value: `"heritage=external-dns"`, TTL: 300},
+		{ID: "5", Type: "NS", Host: "@", Value: "ns1.namesilo.com", TTL: 3600},
 	}
 
 	eps := recordsToEndpoints(records, "example.com")
@@ -99,7 +99,7 @@ func TestRecordsToEndpoints_GroupsAndMaps(t *testing.T) {
 
 func TestRecords_AcrossZonesAndListError(t *testing.T) {
 	m := &mockClient{records: map[string][]namesilo.Record{
-		"example.com": {{ID: "1", Type: "A", Host: "a.example.com", Value: "192.0.2.1", TTL: 3600}},
+		"example.com": {{ID: "1", Type: "A", Host: "a", Value: "192.0.2.1", TTL: 3600}},
 	}}
 	p := testProvider(m, []string{"example.com"}, false)
 
@@ -134,31 +134,43 @@ func TestRecords_RelativeHostsFromLiveAPI(t *testing.T) {
 	assert.Equal(t, []string{"www.example.com", "example.com", "a-www.example.com"}, names)
 }
 
-func TestApplyDelete_FindsRecordListedWithRelativeHost(t *testing.T) {
+// A record whose host ends in the zone (typed as a full name in Namesilo's UI)
+// is a deeper record and must not merge with, or shadow, the managed one.
+func TestHostEndingInZone_StaysSeparateFromManagedRecord(t *testing.T) {
 	m := &mockClient{records: map[string][]namesilo.Record{
-		"example.com": {{ID: "r1", Type: "A", Host: "www", Value: "192.0.2.1", TTL: 3600}},
+		"example.com": {
+			{ID: "managed", Type: "A", Host: "www", Value: "192.0.2.1", TTL: 3600},
+			{ID: "stray", Type: "A", Host: "www.example.com", Value: "192.0.2.1", TTL: 3600},
+		},
 	}}
 	p := testProvider(m, []string{"example.com"}, false)
 
-	err := p.ApplyChanges(context.Background(), &plan.Changes{
+	eps, err := p.Records(context.Background())
+	require.NoError(t, err)
+	require.Len(t, eps, 2)
+	assert.Equal(t, "www.example.com", eps[0].DNSName)
+	assert.Equal(t, []string{"192.0.2.1"}, []string(eps[0].Targets))
+	assert.Equal(t, "www.example.com.example.com", eps[1].DNSName)
+
+	err = p.ApplyChanges(context.Background(), &plan.Changes{
 		Delete: []*endpoint.Endpoint{{DNSName: "www.example.com", RecordType: "A", Targets: endpoint.Targets{"192.0.2.1"}}},
 	})
 	require.NoError(t, err)
 	deletes := m.opsOf("delete")
 	require.Len(t, deletes, 1)
-	assert.Equal(t, "r1", deletes[0].id)
+	assert.Equal(t, "managed", deletes[0].id)
 }
 
 func TestAbsoluteName(t *testing.T) {
 	cases := map[string]string{
-		"":                 "example.com",
-		"@":                "example.com",
-		"www":              "www.example.com",
-		"WWW":              "www.example.com",
-		"www.example.com":  "www.example.com",
-		"www.example.com.": "www.example.com",
-		"example.com":      "example.com",
-		"a.b":              "a.b.example.com",
+		"":                "example.com",
+		"@":               "example.com",
+		"www":             "www.example.com",
+		"WWW":             "www.example.com",
+		"www.":            "www.example.com",
+		"a.b":             "a.b.example.com",
+		"www.example.com": "www.example.com.example.com",
+		"example.com":     "example.com.example.com",
 	}
 	for host, want := range cases {
 		assert.Equal(t, want, absoluteName(host, "example.com"), host)
@@ -281,7 +293,7 @@ func TestApplyCreate_InvalidMXErrors(t *testing.T) {
 
 func TestApplyDelete_ResolvesIDAndIsIdempotent(t *testing.T) {
 	m := &mockClient{records: map[string][]namesilo.Record{
-		"example.com": {{ID: "r1", Type: "A", Host: "www.example.com", Value: "192.0.2.1", TTL: 3600}},
+		"example.com": {{ID: "r1", Type: "A", Host: "www", Value: "192.0.2.1", TTL: 3600}},
 	}}
 	p := testProvider(m, []string{"example.com"}, false)
 
@@ -300,7 +312,7 @@ func TestApplyDelete_ResolvesIDAndIsIdempotent(t *testing.T) {
 
 func TestApplyUpdate_TargetChangeDeletesAndAdds(t *testing.T) {
 	m := &mockClient{records: map[string][]namesilo.Record{
-		"example.com": {{ID: "r1", Type: "A", Host: "www.example.com", Value: "192.0.2.1", TTL: 3600}},
+		"example.com": {{ID: "r1", Type: "A", Host: "www", Value: "192.0.2.1", TTL: 3600}},
 	}}
 	p := testProvider(m, []string{"example.com"}, false)
 
@@ -320,7 +332,7 @@ func TestApplyUpdate_TargetChangeDeletesAndAdds(t *testing.T) {
 
 func TestApplyUpdate_TTLChangeUpdatesInPlace(t *testing.T) {
 	m := &mockClient{records: map[string][]namesilo.Record{
-		"example.com": {{ID: "r1", Type: "A", Host: "www.example.com", Value: "192.0.2.1", TTL: 3600}},
+		"example.com": {{ID: "r1", Type: "A", Host: "www", Value: "192.0.2.1", TTL: 3600}},
 	}}
 	p := testProvider(m, []string{"example.com"}, false)
 

@@ -401,18 +401,17 @@ func relativeHost(dnsName, zone string) string {
 }
 
 // absoluteName turns a host as Namesilo returns it into the full name within
-// zone. The live API returns hosts relative to the domain ("www", "@" for the
-// apex); its reference samples show full names. Both forms map to the same name.
+// zone. The live API returns every host relative to the domain ("www", "@" for
+// the apex), although its reference samples show full names. A host that ends
+// in the zone is therefore a deeper record ("www.example.com" in zone
+// example.com is www.example.com.example.com), never the full form of a
+// shorter one.
 func absoluteName(host, zone string) string {
 	name := normalizeName(host)
-	switch {
-	case name == "" || name == "@":
+	if name == "" || name == "@" {
 		return zone
-	case name == zone || strings.HasSuffix(name, "."+zone):
-		return name
-	default:
-		return name + "." + zone
 	}
+	return name + "." + zone
 }
 
 // normalizeName lowercases a DNS name and strips any trailing dot so names from
