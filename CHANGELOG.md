@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.1](https://github.com/internetliquid/external-dns-namesilo-webhook/compare/v0.1.0...v0.1.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **ci:** clear govulncheck (Go 1.26.8, x/text v0.42.0); the Claude review moves to v1 and reads the whole PR ([c8868e0](https://github.com/internetliquid/external-dns-namesilo-webhook/commit/c8868e0f67686bde390c794497646ef1fa373651))
+* **namesilo:** call /apibatch and accept the relative hosts the live API returns ([f31a3dc](https://github.com/internetliquid/external-dns-namesilo-webhook/commit/f31a3dc55088683b68514f53ca1e4d99b3068c5c))
+* **provider:** treat every Namesilo host as relative ([28d626c](https://github.com/internetliquid/external-dns-namesilo-webhook/commit/28d626c99f3c33b346b24716b951074d78e71cfa))
+
 ## 0.1.0 (2026-06-23)
 
 
