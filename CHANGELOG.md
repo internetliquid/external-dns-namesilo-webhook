@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/internetliquid/external-dns-namesilo-webhook/compare/v0.1.1...v0.1.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **image:** distroless debian13 base and Go 1.26.11; clear x/net advisories ([#16](https://github.com/internetliquid/external-dns-namesilo-webhook/issues/16)) ([5035ea6](https://github.com/internetliquid/external-dns-namesilo-webhook/commit/5035ea6e8bd9d0bd7daa0f27c233fad56ba23c75))
+
 ## [0.1.1](https://github.com/internetliquid/external-dns-namesilo-webhook/compare/v0.1.0...v0.1.1) (2026-10-05)
 
 
